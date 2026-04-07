@@ -7,24 +7,19 @@ from dotenv import load_dotenv
 from PySide6 import QtWidgets, QtCore, QtGui
 
 # ================= 安全性：动态定位 .env =================
-# 获取 MIS.py 文件的绝对路径
 BASE_DIR = Path(__file__).resolve().parent
 env_path = BASE_DIR / ".env"
 
-# 加载环境变量
 if env_path.exists():
     load_dotenv(str(env_path))
 else:
-    # 如果没找到文件，弹窗提示而不是去连 localhost
     print(f"CRITICAL ERROR: .env file not found at {env_path}")
 
-# 严格读取，不给 localhost 兜底的机会
 DB_HOST = os.getenv('DB_HOST')
 DB_USER = os.getenv('DB_USER')
 DB_PASS = os.getenv('DB_PASSWORD')
 DB_NAME = os.getenv('DB_NAME')
 
-# 检查关键配置是否存在
 if not all([DB_HOST, DB_USER, DB_NAME]):
     print("ERROR: .env variables are missing! Please check DB_HOST, DB_USER, etc.")
 
@@ -37,7 +32,6 @@ DB_CONFIG = {
 }
 
 def get_db_connection():
-    # 这里如果配置不对，直接抛出异常，会被 UI 捕获并显示
     return pymysql.connect(**DB_CONFIG)
 
 today = datetime.datetime.today()
@@ -45,105 +39,12 @@ userID = ""
 userChar = ""
 specific_character = ['\\', '/', ':', '?', "\"", "\'", "<", ">", "|"]
 
+# ================= 数据库初始化 =================
 def Initialize_Database():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
                 print("开始初始化数据库...")
-                
-                # --- 第一步：解除武装（核心改进） ---
-                # 暂时关闭外键检查，这样无论表之间有什么复杂的关联，都可以随意 DROP
-                cursor.execute('SET FOREIGN_KEY_CHECKS = 0;')
-                
-                # 清理旧表
-                tables = ['CourseChoosing', 'Courses', 'Teachers', 'Students', 'AccountPassword']
-                for table in tables:
-                    cursor.execute(f"DROP TABLE IF EXISTS {table};")
-                
-                # --- 第二步：重建家园（按逻辑建表） ---
-                
-                # 1. Students
-                cursor.execute('''
-                    CREATE TABLE Students (
-                        StudentID VARCHAR(10) PRIMARY KEY,
-                        StudentName VARCHAR(50) NOT NULL,
-                        Sex VARCHAR(10),
-                        EntranceAge INTEGER,
-                        EntranceYear INTEGER NOT NULL,
-                        Class VARCHAR(50) NOT NULL
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-                ''')
-                
-                # 2. Teachers
-                cursor.execute('''
-                    CREATE TABLE Teachers (
-                        TeacherID VARCHAR(5) PRIMARY KEY,
-                        TeacherName VARCHAR(50) NOT NULL
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-                ''')
-                
-                # 3. Courses (显式命名外键约束，防止 1022 冲突)
-                cursor.execute('''
-                    CREATE TABLE Courses (
-                        CourseID VARCHAR(7) PRIMARY KEY,
-                        CourseName VARCHAR(100) NOT NULL,
-                        TeacherID VARCHAR(5) NOT NULL,
-                        Credit FLOAT NOT NULL,
-                        Grade INTEGER NOT NULL,
-                        CanceledYear INTEGER,
-                        CONSTRAINT fk_course_teacher FOREIGN KEY (TeacherID) REFERENCES Teachers(TeacherID)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-                ''')
-                
-                # 4. CourseChoosing
-                cursor.execute('''
-                    CREATE TABLE CourseChoosing (
-                        StudentID VARCHAR(10) NOT NULL,
-                        CourseID VARCHAR(7) NOT NULL,
-                        TeacherID VARCHAR(5) NOT NULL,
-                        ChosenYear INTEGER NOT NULL,
-                        Score FLOAT,
-                        PRIMARY KEY (StudentID, CourseID, TeacherID),
-                        CONSTRAINT fk_cc_student FOREIGN KEY (StudentID) REFERENCES Students(StudentID) ON DELETE CASCADE,
-                        CONSTRAINT fk_cc_course FOREIGN KEY (CourseID) REFERENCES Courses(CourseID),
-                        CONSTRAINT fk_cc_teacher FOREIGN KEY (TeacherID) REFERENCES Teachers(TeacherID)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-                ''')
-                
-                # 5. AccountPassword
-                cursor.execute('''
-                    CREATE TABLE AccountPassword (
-                        Account VARCHAR(20) PRIMARY KEY,
-                        Occupation VARCHAR(20),
-                        Password VARCHAR(50) NOT NULL
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-                ''')
-
-                # --- 第三步：注入血液（插入数据） ---
-                
-                # 插入演示账号数据
-                account_passwords = [
-                    ('2020000001', 'student', '123456'), ('00001', 'teacher', '123456'),
-                    ('00000', 'admin', '123456')
-                ]
-                cursor.executemany('INSERT INTO AccountPassword VALUES (%s, %s, %s)', account_passwords)
-                
-                # 插入一名演示学生信息
-                cursor.execute('INSERT INTO Students VALUES (%s, %s, %s, %s, %s, %s)', 
-                               ('2020000001', 'Charlie', 'male', 22, 2020, 'Class 3'))
-
-                # --- 第四步：恢复秩序 ---
-                # 重新开启外键检查，保证后续操作的安全性
-                cursor.execute('SET FOREIGN_KEY_CHECKS = 1;')
-                
-            conn.commit()
-            print("=== 数据库自动重置并初始化成功！===")
-            
-    except Exception as e:
-        print(f"Database Initialization Error: {e}")
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
                 # 禁用外键检查以便干净地删除旧表
                 cursor.execute('SET FOREIGN_KEY_CHECKS = 0;')
                 cursor.execute('DROP TABLE IF EXISTS CourseChoosing;')
@@ -153,7 +54,7 @@ def Initialize_Database():
                 cursor.execute('DROP TABLE IF EXISTS AccountPassword;')
                 cursor.execute('SET FOREIGN_KEY_CHECKS = 1;')
 
-                # 1. 创建 Students 表
+                # 1. 创建表
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS Students (
                         StudentID VARCHAR(10) PRIMARY KEY,
@@ -162,18 +63,16 @@ def Initialize_Database():
                         EntranceAge INTEGER,
                         EntranceYear INTEGER NOT NULL,
                         Class VARCHAR(50) NOT NULL
-                    )
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ''')
                 
-                # 2. 创建 Teachers 表
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS Teachers (
                         TeacherID VARCHAR(5) PRIMARY KEY,
                         TeacherName VARCHAR(50) NOT NULL
-                    )
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ''')
                 
-                # 3. 创建 Courses 表 (显式指定外键名称: fk_courses_teacher)
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS Courses (
                         CourseID VARCHAR(7) PRIMARY KEY,
@@ -183,10 +82,9 @@ def Initialize_Database():
                         Grade INTEGER NOT NULL,
                         CanceledYear INTEGER,
                         CONSTRAINT fk_courses_teacher FOREIGN KEY (TeacherID) REFERENCES Teachers(TeacherID)
-                    )
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ''')
                 
-                # 4. 创建 CourseChoosing 表 (显式指定3个外键的名称)
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS CourseChoosing (
                         StudentID VARCHAR(10) NOT NULL,
@@ -198,20 +96,18 @@ def Initialize_Database():
                         CONSTRAINT fk_cc_student FOREIGN KEY (StudentID) REFERENCES Students(StudentID) ON DELETE CASCADE,
                         CONSTRAINT fk_cc_course FOREIGN KEY (CourseID) REFERENCES Courses(CourseID),
                         CONSTRAINT fk_cc_teacher FOREIGN KEY (TeacherID) REFERENCES Teachers(TeacherID)
-                    )
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ''')
                 
-                # 5. 创建 AccountPassword 表
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS AccountPassword (
                         Account VARCHAR(20) PRIMARY KEY,
                         Occupation VARCHAR(20),
                         Password VARCHAR(50) NOT NULL
-                    )
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ''')
 
-                # ================= 插入初始数据 =================
-                # 关键：在插入数据前关闭外键检查，防止由于插入顺序导致的 1452 错误
+                # 2. 插入初始数据
                 cursor.execute('SET FOREIGN_KEY_CHECKS = 0;')
 
                 students = [
@@ -254,11 +150,9 @@ def Initialize_Database():
                 ]
                 cursor.executemany('INSERT INTO AccountPassword VALUES (%s, %s, %s)', account_passwords)
                 
-                # 恢复外键检查
                 cursor.execute('SET FOREIGN_KEY_CHECKS = 1;')
-            
             conn.commit()
-            print("=== 数据库初始化成功！===")
+            print("=== 数据库自动重置并初始化成功！===")
     except Exception as e:
         print(f"Database Initialization Error: {e}")
 
@@ -272,14 +166,12 @@ class Login_Ui(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Login")
-        self.resize(500, 320) # 稍微加高一点窗口
+        self.resize(500, 320)
         
-        # 欢迎词
         self.label_Welcome = QtWidgets.QLabel("Welcome to MIS for Computer\nScience college of SCUT", self)
         self.label_Welcome.setGeometry(QtCore.QRect(100, 20, 300, 60))
         self.label_Welcome.setAlignment(QtCore.Qt.AlignCenter)
         
-        # 输入框布局 (保持原位或微调)
         QtWidgets.QLabel("User ID", self).setGeometry(QtCore.QRect(98, 93, 70, 40))
         self.User_ID_Input = QtWidgets.QLineEdit(self)
         self.User_ID_Input.setGeometry(QtCore.QRect(170, 100, 200, 25))
@@ -293,58 +185,16 @@ class Login_Ui(QtWidgets.QWidget):
         self.Button_login.setGeometry(QtCore.QRect(200, 180, 100, 30))
         self.Button_login.clicked.connect(self.login_check)
 
-        # --- 重点改进：报错信息标签 ---
         self.label_Invalid_Login_Error = QtWidgets.QLabel(self)
-        # 放在登录按钮下方，宽度拉长，高度增加，开启换行
         self.label_Invalid_Login_Error.setGeometry(QtCore.QRect(40, 220, 420, 60))
         self.label_Invalid_Login_Error.setWordWrap(True) 
         self.label_Invalid_Login_Error.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignHCenter)
         self.label_Invalid_Login_Error.setStyleSheet("color: red; font-size: 10pt;")
         self.label_Invalid_Login_Error.setVisible(False)
         
-        # 作者信息移到底部
         self.label_author = QtWidgets.QLabel("作者：计算机科学与技术(全英创新班) 胡子健", self)
         self.label_author.setGeometry(QtCore.QRect(0, 280, 500, 30))
         self.label_author.setAlignment(QtCore.Qt.AlignCenter)
-
-    def login_check(self):
-        # 逻辑与之前一致，由于 label_Invalid_Login_Error 开启了 setWordWrap
-        # 复杂的 MySQL 报错信息现在会自动折行显示完整了
-        # ... 之前的 login_check 逻辑 ...
-        pass
-    admin_window = QtCore.Signal()
-    teacher_window = QtCore.Signal()
-    student_window = QtCore.Signal()
-
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Login")
-        self.resize(500, 300)
-        
-        self.label_Welcome = QtWidgets.QLabel("Welcome to MIS for Computer\nScience college of SCUT", self)
-        self.label_Welcome.setGeometry(QtCore.QRect(125, 30, 300, 51))
-        
-        QtWidgets.QLabel("User ID", self).setGeometry(QtCore.QRect(98, 93, 70, 40))
-        QtWidgets.QLabel("Password", self).setGeometry(QtCore.QRect(95, 130, 71, 20))
-        
-        self.label_Invalid_Login_Error = QtWidgets.QLabel(self)
-        self.label_Invalid_Login_Error.setGeometry(QtCore.QRect(95, 195, 300, 51))
-        self.label_Invalid_Login_Error.setAlignment(QtCore.Qt.AlignCenter)
-        self.label_Invalid_Login_Error.setStyleSheet("color: rgb(250, 0, 0);")
-        self.label_Invalid_Login_Error.setVisible(False)
-        
-        QtWidgets.QLabel("作者：计算机科学与技术(全英创新班) 胡子健", self).setGeometry(QtCore.QRect(0, 240, 500, 50))
-        
-        self.User_ID_Input = QtWidgets.QLineEdit(self)
-        self.User_ID_Input.setGeometry(QtCore.QRect(170, 100, 200, 20))
-        
-        self.Password_Input = QtWidgets.QLineEdit(self)
-        self.Password_Input.setGeometry(QtCore.QRect(170, 130, 200, 20))
-        self.Password_Input.setEchoMode(QtWidgets.QLineEdit.Password)
-        
-        self.Button_login = QtWidgets.QPushButton("Login", self)
-        self.Button_login.setGeometry(QtCore.QRect(200, 160, 75, 24))
-        self.Button_login.clicked.connect(self.login_check)
 
     def login_check(self):
         global userID, userChar
@@ -369,7 +219,6 @@ class Login_Ui(QtWidgets.QWidget):
         try:
             with get_db_connection() as conn:
                 with conn.cursor() as cursor:
-                    # 使用 MySQL 占位符 %s
                     cursor.execute("SELECT Occupation, Password FROM AccountPassword WHERE Account=%s", (getID,))
                     result = cursor.fetchone()
 
@@ -399,17 +248,17 @@ class Student_Ui(QtWidgets.QWidget):
         self.setWindowTitle("Student")
         self.resize(541, 365)
         
-        btn_query = QtWidgets.QPushButton("Query", self)
-        btn_query.setGeometry(QtCore.QRect(180, 90, 161, 61))
-        btn_query.clicked.connect(self.query.emit)
+        self.btn_query = QtWidgets.QPushButton("Query", self)
+        self.btn_query.setGeometry(QtCore.QRect(180, 90, 161, 61))
+        self.btn_query.clicked.connect(self.query.emit)
         
-        btn_change = QtWidgets.QPushButton("Change Password", self)
-        btn_change.setGeometry(QtCore.QRect(180, 160, 161, 61))
-        btn_change.clicked.connect(self.change.emit)
+        self.btn_change = QtWidgets.QPushButton("Change Password", self)
+        self.btn_change.setGeometry(QtCore.QRect(180, 160, 161, 61))
+        self.btn_change.clicked.connect(self.change.emit)
 
-        btn_logout = QtWidgets.QPushButton("Logout", self)
-        btn_logout.setGeometry(QtCore.QRect(180, 230, 161, 61))
-        btn_logout.clicked.connect(self.logout.emit)
+        self.btn_logout = QtWidgets.QPushButton("Logout", self)
+        self.btn_logout.setGeometry(QtCore.QRect(180, 230, 161, 61))
+        self.btn_logout.clicked.connect(self.logout.emit)
 
 class Teacher_Ui(QtWidgets.QWidget):
     query = QtCore.Signal()
@@ -422,21 +271,21 @@ class Teacher_Ui(QtWidgets.QWidget):
         self.setWindowTitle("Teacher")
         self.resize(541, 365)
         
-        btn_query = QtWidgets.QPushButton("Query", self)
-        btn_query.setGeometry(QtCore.QRect(120, 50, 281, 61))
-        btn_query.clicked.connect(self.query.emit)
+        self.btn_query = QtWidgets.QPushButton("Query", self)
+        self.btn_query.setGeometry(QtCore.QRect(120, 50, 281, 61))
+        self.btn_query.clicked.connect(self.query.emit)
         
-        btn_sss = QtWidgets.QPushButton("Set Student's Score", self)
-        btn_sss.setGeometry(QtCore.QRect(120, 120, 281, 61))
-        btn_sss.clicked.connect(self.sss.emit)
+        self.btn_sss = QtWidgets.QPushButton("Set Student's Score", self)
+        self.btn_sss.setGeometry(QtCore.QRect(120, 120, 281, 61))
+        self.btn_sss.clicked.connect(self.sss.emit)
         
-        btn_cp = QtWidgets.QPushButton("Change Password", self)
-        btn_cp.setGeometry(QtCore.QRect(120, 190, 281, 61))
-        btn_cp.clicked.connect(self.cp.emit)
+        self.btn_cp = QtWidgets.QPushButton("Change Password", self)
+        self.btn_cp.setGeometry(QtCore.QRect(120, 190, 281, 61))
+        self.btn_cp.clicked.connect(self.cp.emit)
 
-        btn_logout = QtWidgets.QPushButton("Logout", self)
-        btn_logout.setGeometry(QtCore.QRect(120, 260, 281, 61))
-        btn_logout.clicked.connect(self.lo.emit)
+        self.btn_logout = QtWidgets.QPushButton("Logout", self)
+        self.btn_logout.setGeometry(QtCore.QRect(120, 260, 281, 61))
+        self.btn_logout.clicked.connect(self.lo.emit)
 
 class Admin_Ui(QtWidgets.QWidget):
     query = QtCore.Signal()
@@ -449,21 +298,25 @@ class Admin_Ui(QtWidgets.QWidget):
         self.setWindowTitle("Admin")
         self.resize(541, 380)
         
-        QtWidgets.QPushButton("Query", self).setGeometry(QtCore.QRect(170, 20, 181, 60))
-        self.children()[-1].clicked.connect(self.query.emit)
+        self.btn_query = QtWidgets.QPushButton("Query", self)
+        self.btn_query.setGeometry(QtCore.QRect(170, 20, 181, 60))
+        self.btn_query.clicked.connect(self.query.emit)
         
-        QtWidgets.QPushButton("Modify Information", self).setGeometry(QtCore.QRect(170, 90, 181, 60))
-        self.children()[-1].clicked.connect(self.mi.emit)
+        self.btn_modify = QtWidgets.QPushButton("Modify Information", self)
+        self.btn_modify.setGeometry(QtCore.QRect(170, 90, 181, 60))
+        self.btn_modify.clicked.connect(self.mi.emit)
         
-        QtWidgets.QPushButton("Change Password", self).setGeometry(QtCore.QRect(170, 160, 181, 60))
-        self.children()[-1].clicked.connect(self.cp.emit)
+        self.btn_cp = QtWidgets.QPushButton("Change Password", self)
+        self.btn_cp.setGeometry(QtCore.QRect(170, 160, 181, 60))
+        self.btn_cp.clicked.connect(self.cp.emit)
         
-        btn_init = QtWidgets.QPushButton("Initialize\nDatabase", self)
-        btn_init.setGeometry(QtCore.QRect(170, 230, 181, 60))
-        btn_init.clicked.connect(self.initialize_database)
+        self.btn_init = QtWidgets.QPushButton("Initialize\nDatabase", self)
+        self.btn_init.setGeometry(QtCore.QRect(170, 230, 181, 60))
+        self.btn_init.clicked.connect(self.initialize_database)
         
-        QtWidgets.QPushButton("Logout", self).setGeometry(QtCore.QRect(170, 300, 181, 60))
-        self.children()[-1].clicked.connect(self.logout.emit)
+        self.btn_logout = QtWidgets.QPushButton("Logout", self)
+        self.btn_logout.setGeometry(QtCore.QRect(170, 300, 181, 60))
+        self.btn_logout.clicked.connect(self.logout.emit)
 
     def initialize_database(self):
         reply = QtWidgets.QMessageBox.question(self, 'Initialize Database', 'Are you sure to initialize the database?',
@@ -537,17 +390,17 @@ class Student_Info_Query_Ui(QtWidgets.QWidget):
         self.line_name = QtWidgets.QLineEdit(self)
         self.line_name.setGeometry(QtCore.QRect(160, 90, 300, 20))
         
-        btn_stu = QtWidgets.QPushButton("Student Info", self)
-        btn_stu.setGeometry(QtCore.QRect(480, 30, 200, 30))
-        btn_stu.clicked.connect(self.query_student)
+        self.btn_stu = QtWidgets.QPushButton("Student Info", self)
+        self.btn_stu.setGeometry(QtCore.QRect(480, 30, 200, 30))
+        self.btn_stu.clicked.connect(self.query_student)
         
-        btn_cou = QtWidgets.QPushButton("Chosen Course Info", self)
-        btn_cou.setGeometry(QtCore.QRect(480, 70, 200, 30))
-        btn_cou.clicked.connect(self.query_course)
+        self.btn_cou = QtWidgets.QPushButton("Chosen Course Info", self)
+        self.btn_cou.setGeometry(QtCore.QRect(480, 70, 200, 30))
+        self.btn_cou.clicked.connect(self.query_course)
         
-        btn_back = QtWidgets.QPushButton("Back", self)
-        btn_back.setGeometry(QtCore.QRect(480, 110, 200, 30))
-        btn_back.clicked.connect(self.back.emit)
+        self.btn_back = QtWidgets.QPushButton("Back", self)
+        self.btn_back.setGeometry(QtCore.QRect(480, 110, 200, 30))
+        self.btn_back.clicked.connect(self.back.emit)
         
         self.table = QtWidgets.QTableWidget(self)
         self.table.setGeometry(QtCore.QRect(20, 170, 660, 170))
@@ -609,11 +462,24 @@ class Student_Score_Query_Ui(QtWidgets.QWidget):
         self.label_Result.setGeometry(QtCore.QRect(255, 150, 200, 20))
         self.label_Result.setStyleSheet("color: red;")
         
-        QtWidgets.QPushButton("Student Score Info", self).setGeometry(QtCore.QRect(480, 30, 200, 30)).clicked.connect(self.query)
-        QtWidgets.QPushButton("Back", self).setGeometry(QtCore.QRect(480, 110, 200, 30)).clicked.connect(self.back.emit)
+        self.btn_query_score = QtWidgets.QPushButton("Student Score Info", self)
+        self.btn_query_score.setGeometry(QtCore.QRect(480, 30, 200, 30))
+        self.btn_query_score.clicked.connect(self.query)
+        
+        self.btn_back = QtWidgets.QPushButton("Back", self)
+        self.btn_back.setGeometry(QtCore.QRect(480, 110, 200, 30))
+        self.btn_back.clicked.connect(self.back.emit)
         
         self.table = QtWidgets.QTableWidget(self)
         self.table.setGeometry(QtCore.QRect(20, 170, 660, 170))
+
+        # --- 核心体验优化：学生自动填光学号并锁定，防止查别人成绩 ---
+        if userChar == "student":
+            self.inputs["Student ID"].setText(userID)
+            self.inputs["Student ID"].setReadOnly(True)
+            self.inputs["Student ID"].setStyleSheet("background-color: #e0e0e0; color: gray;")
+            # 一进入界面自动查成绩
+            QtCore.QTimer.singleShot(10, self.query)
 
     def query(self):
         sql = '''SELECT s.StudentName, s.StudentID, c.CourseName, c.CourseID, cc.Score
@@ -622,10 +488,10 @@ class Student_Score_Query_Ui(QtWidgets.QWidget):
                  JOIN Courses c ON c.CourseID=cc.CourseID WHERE 1=1'''
         params = []
         
-        s_id = self.inputs["Student ID"].text()
-        s_name = self.inputs["Student Name"].text()
-        c_id = self.inputs["Course ID"].text()
-        c_name = self.inputs["Course Name"].text()
+        s_id = self.inputs["Student ID"].text().strip()
+        s_name = self.inputs["Student Name"].text().strip()
+        c_id = self.inputs["Course ID"].text().strip()
+        c_name = self.inputs["Course Name"].text().strip()
         
         if s_id: sql += " AND s.StudentID=%s"; params.append(s_id)
         if s_name: sql += " AND s.StudentName=%s"; params.append(s_name)
@@ -644,9 +510,216 @@ class Student_Score_Query_Ui(QtWidgets.QWidget):
                         self.label_Result.setText("There is no data")
         except Exception as e:
             self.label_Result.setText("Database Error")
+   
 
-# (为保持代码精简且完整，中间几个相似查询界面 Course_Info, Teaching_Info 逻辑高度重复，此处省略相似的子句判断，使用万能的WHERE 1=1)
-# 为了符合 "不减少功能" 的要求，这里提供完整的 Modify Router
+
+# ================= 补充缺失的空壳查询界面 =================
+class Course_Info_Query_Ui(QtWidgets.QWidget):
+    back = QtCore.Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Course Info Query")
+        self.resize(700, 350)
+        
+        labels = ["Course ID", "Course Name", "Teacher Name"]
+        self.inputs = {}
+        for i, text in enumerate(labels):
+            QtWidgets.QLabel(text, self).setGeometry(QtCore.QRect(20, 30 + i*40, 100, 20))
+            le = QtWidgets.QLineEdit(self)
+            le.setGeometry(QtCore.QRect(130, 30 + i*40, 200, 20))
+            self.inputs[text] = le
+            
+        self.label_Result = QtWidgets.QLabel("Query Result", self)
+        self.label_Result.setGeometry(QtCore.QRect(350, 140, 200, 20))
+        self.label_Result.setStyleSheet("color: red;")
+        
+        self.btn_query = QtWidgets.QPushButton("Query Course", self)
+        self.btn_query.setGeometry(QtCore.QRect(400, 30, 150, 35))
+        self.btn_query.clicked.connect(self.query)
+        
+        self.btn_back = QtWidgets.QPushButton("Back", self)
+        self.btn_back.setGeometry(QtCore.QRect(400, 80, 150, 35))
+        self.btn_back.clicked.connect(self.back.emit)
+        
+        self.table = QtWidgets.QTableWidget(self)
+        self.table.setGeometry(QtCore.QRect(20, 170, 660, 160))
+
+        # --- 核心体验优化：如果是学生登录，自动查询并调整界面 ---
+        if userChar == "student":
+            self.setWindowTitle("My Chosen Courses")
+            self.btn_query.setText("Filter My Courses")
+            # 延时 10 毫秒自动执行查询（确保界面先画完再查数据库，防止卡顿）
+            QtCore.QTimer.singleShot(10, self.query)
+
+    def query(self):
+        # 针对不同角色使用不同的 SQL
+        if userChar == "student":
+            # 学生：必须关联 CourseChoosing 表，且只查自己的 userID
+            sql = '''SELECT c.CourseID, c.CourseName, t.TeacherName, c.Credit, c.Grade, cc.ChosenYear
+                     FROM CourseChoosing cc
+                     JOIN Courses c ON cc.CourseID = c.CourseID
+                     LEFT JOIN Teachers t ON c.TeacherID = t.TeacherID
+                     WHERE cc.StudentID = %s'''
+            params = [userID]
+        else:
+            # 老师/管理员：直接查全校的所有课程库
+            sql = '''SELECT c.CourseID, c.CourseName, t.TeacherName, c.Credit, c.Grade, c.CanceledYear
+                     FROM Courses c
+                     LEFT JOIN Teachers t ON c.TeacherID = t.TeacherID
+                     WHERE 1=1'''
+            params = []
+        
+        # 在查出来的范围内，还可以继续使用输入框进行二次过滤
+        c_id = self.inputs["Course ID"].text().strip()
+        c_name = self.inputs["Course Name"].text().strip()
+        t_name = self.inputs["Teacher Name"].text().strip()
+        
+        if c_id: sql += " AND c.CourseID=%s"; params.append(c_id)
+        if c_name: sql += " AND c.CourseName LIKE %s"; params.append(f"%{c_name}%")
+        if t_name: sql += " AND t.TeacherName LIKE %s"; params.append(f"%{t_name}%")
+        
+        sql += " ORDER BY c.CourseID"
+        
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, params)
+                    if fill_table(self.table, cursor, cursor.fetchall()):
+                        self.label_Result.setText("Query Result")
+                    else:
+                        self.label_Result.setText("There is no data")
+        except Exception as e:
+            self.label_Result.setText(f"Database Error: {e}")
+
+
+    
+   
+
+class Teaching_Info_Query_Ui(QtWidgets.QWidget):
+    back = QtCore.Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Teacher & Teaching Info Query")
+        self.resize(700, 350)
+        
+        labels = ["Teacher ID", "Teacher Name"]
+        self.inputs = {}
+        for i, text in enumerate(labels):
+            QtWidgets.QLabel(text, self).setGeometry(QtCore.QRect(20, 40 + i*50, 100, 20))
+            le = QtWidgets.QLineEdit(self)
+            le.setGeometry(QtCore.QRect(130, 40 + i*50, 200, 20))
+            self.inputs[text] = le
+            
+        self.label_Result = QtWidgets.QLabel("Query Result", self)
+        self.label_Result.setGeometry(QtCore.QRect(350, 130, 200, 20))
+        self.label_Result.setStyleSheet("color: red;")
+        
+        self.btn_query = QtWidgets.QPushButton("Query Teaching Info", self)
+        self.btn_query.setGeometry(QtCore.QRect(400, 30, 180, 35))
+        self.btn_query.clicked.connect(self.query)
+        
+        self.btn_back = QtWidgets.QPushButton("Back", self)
+        self.btn_back.setGeometry(QtCore.QRect(400, 80, 180, 35))
+        self.btn_back.clicked.connect(self.back.emit)
+        
+        self.table = QtWidgets.QTableWidget(self)
+        self.table.setGeometry(QtCore.QRect(20, 160, 660, 170))
+
+    def query(self):
+        sql = '''SELECT t.TeacherID, t.TeacherName, c.CourseID, c.CourseName, c.Credit
+                 FROM Teachers t
+                 JOIN Courses c ON t.TeacherID = c.TeacherID
+                 WHERE 1=1'''
+        params = []
+        
+        t_id = self.inputs["Teacher ID"].text().strip()
+        t_name = self.inputs["Teacher Name"].text().strip()
+        
+        if t_id: sql += " AND t.TeacherID=%s"; params.append(t_id)
+        if t_name: sql += " AND t.TeacherName LIKE %s"; params.append(f"%{t_name}%")
+        
+        sql += " ORDER BY t.TeacherID, c.CourseID"
+        
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, params)
+                    if fill_table(self.table, cursor, cursor.fetchall()):
+                        self.label_Result.setText("Query Result")
+                    else:
+                        self.label_Result.setText("There is no data")
+        except Exception as e:
+            self.label_Result.setText(f"Database Error: {e}")
+    back = QtCore.Signal()
+
+
+class Average_Score_Info_Query_Ui(QtWidgets.QWidget):
+    back = QtCore.Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Average Score Info Query")
+        self.resize(700, 350)
+        
+        QtWidgets.QLabel("Course ID", self).setGeometry(QtCore.QRect(20, 40, 100, 20))
+        self.line_c_id = QtWidgets.QLineEdit(self)
+        self.line_c_id.setGeometry(QtCore.QRect(130, 40, 200, 20))
+        
+        QtWidgets.QLabel("Course Name", self).setGeometry(QtCore.QRect(20, 90, 100, 20))
+        self.line_c_name = QtWidgets.QLineEdit(self)
+        self.line_c_name.setGeometry(QtCore.QRect(130, 90, 200, 20))
+            
+        self.label_Result = QtWidgets.QLabel("Query Result", self)
+        self.label_Result.setGeometry(QtCore.QRect(350, 130, 200, 20))
+        self.label_Result.setStyleSheet("color: red;")
+        
+        self.btn_query = QtWidgets.QPushButton("Query Average", self)
+        self.btn_query.setGeometry(QtCore.QRect(400, 30, 150, 35))
+        self.btn_query.clicked.connect(self.query)
+        
+        self.btn_back = QtWidgets.QPushButton("Back", self)
+        self.btn_back.setGeometry(QtCore.QRect(400, 80, 150, 35))
+        self.btn_back.clicked.connect(self.back.emit)
+        
+        self.table = QtWidgets.QTableWidget(self)
+        self.table.setGeometry(QtCore.QRect(20, 160, 660, 170))
+
+    def query(self):
+        # 使用聚合函数计算人数、平均分（保留两位小数）、最高分和最低分
+        sql = '''SELECT c.CourseID, c.CourseName, 
+                        COUNT(cc.StudentID) as StudentCount,
+                        ROUND(AVG(cc.Score), 2) as AverageScore,
+                        MAX(cc.Score) as MaxScore,
+                        MIN(cc.Score) as MinScore
+                 FROM Courses c
+                 JOIN CourseChoosing cc ON c.CourseID = cc.CourseID
+                 WHERE cc.Score IS NOT NULL '''
+        params = []
+        
+        c_id = self.line_c_id.text().strip()
+        c_name = self.line_c_name.text().strip()
+        
+        if c_id: sql += " AND c.CourseID=%s"; params.append(c_id)
+        if c_name: sql += " AND c.CourseName LIKE %s"; params.append(f"%{c_name}%")
+        
+        # 使用 GROUP BY 按课程分组
+        sql += " GROUP BY c.CourseID, c.CourseName ORDER BY c.CourseID"
+        
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, params)
+                    if fill_table(self.table, cursor, cursor.fetchall()):
+                        self.label_Result.setText("Query Result")
+                    else:
+                        self.label_Result.setText("There is no data")
+        except Exception as e:
+            self.label_Result.setText(f"Database Error: {e}")
+    back = QtCore.Signal()
+
+# ================= 修改与操作界面 =================
 class Modify_Info_Ui(QtWidgets.QWidget):
     stu_info = QtCore.Signal()
     cou_info = QtCore.Signal()
@@ -657,10 +730,396 @@ class Modify_Info_Ui(QtWidgets.QWidget):
         super().__init__()
         self.setWindowTitle("Modify Information")
         self.resize(451, 313)
-        QtWidgets.QPushButton("Student Info", self).setGeometry(QtCore.QRect(120, 60, 191, 41)).clicked.connect(self.stu_info.emit)
-        QtWidgets.QPushButton("Course Info", self).setGeometry(QtCore.QRect(120, 110, 191, 41)).clicked.connect(self.cou_info.emit)
-        QtWidgets.QPushButton("Course Choosing Info", self).setGeometry(QtCore.QRect(120, 160, 191, 41)).clicked.connect(self.coc_info.emit)
-        QtWidgets.QPushButton("Back", self).setGeometry(QtCore.QRect(120, 210, 191, 41)).clicked.connect(self.bs.emit)
+        
+        self.btn_stu = QtWidgets.QPushButton("Student Info", self)
+        self.btn_stu.setGeometry(QtCore.QRect(120, 60, 191, 41))
+        self.btn_stu.clicked.connect(self.stu_info.emit)
+        
+        self.btn_cou = QtWidgets.QPushButton("Course Info", self)
+        self.btn_cou.setGeometry(QtCore.QRect(120, 110, 191, 41))
+        self.btn_cou.clicked.connect(self.cou_info.emit)
+        
+        self.btn_coc = QtWidgets.QPushButton("Course Choosing Info", self)
+        self.btn_coc.setGeometry(QtCore.QRect(120, 160, 191, 41))
+        self.btn_coc.clicked.connect(self.coc_info.emit)
+        
+        self.btn_back = QtWidgets.QPushButton("Back", self)
+        self.btn_back.setGeometry(QtCore.QRect(120, 210, 191, 41))
+        self.btn_back.clicked.connect(self.bs.emit)
+
+# 补充缺失的空壳修改界面
+class Student_Info_Modify_Ui(QtWidgets.QWidget):
+    back = QtCore.Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Modify Student Info")
+        self.resize(700, 400)
+        
+        # 1. 动态生成表单输入框
+        labels = ["StudentID", "StudentName", "Sex", "EntranceAge", "EntranceYear", "Class"]
+        self.inputs = {}
+        for i, text in enumerate(labels):
+            QtWidgets.QLabel(text, self).setGeometry(QtCore.QRect(50, 30 + i*40, 100, 20))
+            le = QtWidgets.QLineEdit(self)
+            le.setGeometry(QtCore.QRect(150, 30 + i*40, 200, 20))
+            self.inputs[text] = le
+            
+        self.label_Result = QtWidgets.QLabel("", self)
+        self.label_Result.setGeometry(QtCore.QRect(0, 280, 700, 30))
+        self.label_Result.setAlignment(QtCore.Qt.AlignCenter)
+        self.label_Result.setStyleSheet("font-weight: bold;")
+        
+        # 2. 核心操作按钮
+        self.btn_add = QtWidgets.QPushButton("Add", self)
+        self.btn_add.setGeometry(QtCore.QRect(420, 50, 150, 35))
+        self.btn_add.clicked.connect(self.add_student)
+        
+        self.btn_update = QtWidgets.QPushButton("Update", self)
+        self.btn_update.setGeometry(QtCore.QRect(420, 110, 150, 35))
+        self.btn_update.clicked.connect(self.update_student)
+
+        self.btn_delete = QtWidgets.QPushButton("Delete", self)
+        self.btn_delete.setGeometry(QtCore.QRect(420, 170, 150, 35))
+        self.btn_delete.clicked.connect(self.delete_student)
+        self.btn_delete.setStyleSheet("color: red;") # 删除按钮标红预警
+        
+        self.btn_back = QtWidgets.QPushButton("Back", self)
+        self.btn_back.setGeometry(QtCore.QRect(420, 230, 150, 35))
+        self.btn_back.clicked.connect(self.back.emit)
+
+    def execute_modify(self, sql, params, success_msg):
+        """统一封装的数据库修改执行器"""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, params)
+                    conn.commit()
+                    self.label_Result.setStyleSheet("color: green;")
+                    self.label_Result.setText(success_msg)
+        except pymysql.err.IntegrityError as e:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText(f"Data Conflict Error (Duplicate ID or Foreign Key): {e.args[1]}")
+        except Exception as e:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText(f"Database Error: {e}")
+
+    def add_student(self):
+        vals = [self.inputs[k].text().strip() for k in self.inputs]
+        if not all(vals[:2]) or not vals[4]: # ID, Name, EntranceYear 不能为空
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText("Error: StudentID, Name and EntranceYear are required!")
+            return
+        
+        student_id = vals[0]
+        default_password = "123456" # 设置统一的初始默认密码
+        
+        try:
+            # 开启数据库连接，这里会自动处理事务 (Transaction)
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    # 第一步：把学生基本信息存入 Students 表
+                    sql_student = "INSERT INTO Students VALUES (%s, %s, %s, %s, %s, %s)"
+                    params_student = [vals[0], vals[1], vals[2] or None, vals[3] or None, vals[4], vals[5] or 'None']
+                    cursor.execute(sql_student, params_student)
+                    
+                    # 第二步：同时为该新生在 AccountPassword 表中创建登录账号
+                    sql_account = "INSERT INTO AccountPassword (Account, Occupation, Password) VALUES (%s, %s, %s)"
+                    cursor.execute(sql_account, (student_id, 'student', default_password))
+                    
+                    # 只有两步都执行成功，才会将数据一起提交保存 (Commit)
+                    conn.commit() 
+                    
+                    self.label_Result.setStyleSheet("color: green;")
+                    self.label_Result.setText(f"Success! Default password is {default_password}")
+                    
+        except pymysql.err.IntegrityError as e:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText(f"Data Conflict Error (Duplicate ID): {e.args[1]}")
+        except Exception as e:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText(f"Database Error: {e}")
+
+    def update_student(self):
+        vals = [self.inputs[k].text().strip() for k in self.inputs]
+        if not vals[0]:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText("Error: StudentID is required to locate the student.")
+            return
+        sql = '''UPDATE Students SET StudentName=IFNULL(%s, StudentName), Sex=IFNULL(%s, Sex), 
+                 EntranceAge=IFNULL(%s, EntranceAge), EntranceYear=IFNULL(%s, EntranceYear), 
+                 Class=IFNULL(%s, Class) WHERE StudentID=%s'''
+        params = [vals[1] or None, vals[2] or None, vals[3] or None, vals[4] or None, vals[5] or None, vals[0]]
+        self.execute_modify(sql, params, "Student updated successfully!")
+
+    def delete_student(self):
+        s_id = self.inputs["StudentID"].text().strip()
+        if not s_id:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText("Error: Please specify the StudentID to delete.")
+            return
+            
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    # 先删除登录账号
+                    cursor.execute("DELETE FROM AccountPassword WHERE Account=%s AND Occupation='student'", (s_id,))
+                    # 再删除学生信息 (因为有级联删除，相关的选课记录也会被自动删除)
+                    cursor.execute("DELETE FROM Students WHERE StudentID=%s", (s_id,))
+                    
+                    conn.commit()
+                    self.label_Result.setStyleSheet("color: green;")
+                    self.label_Result.setText("Student and account deleted successfully!")
+                    
+        except Exception as e:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText(f"Database Error: {e}")
+
+class Course_Info_Modify_Ui(QtWidgets.QWidget):
+    back = QtCore.Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Modify Course Info")
+        self.resize(700, 400)
+        
+        labels = ["CourseID", "CourseName", "TeacherID", "Credit", "Grade", "CanceledYear"]
+        self.inputs = {}
+        for i, text in enumerate(labels):
+            QtWidgets.QLabel(text, self).setGeometry(QtCore.QRect(50, 30 + i*40, 100, 20))
+            le = QtWidgets.QLineEdit(self)
+            le.setGeometry(QtCore.QRect(150, 30 + i*40, 200, 20))
+            self.inputs[text] = le
+            
+        self.label_Result = QtWidgets.QLabel("", self)
+        self.label_Result.setGeometry(QtCore.QRect(0, 280, 700, 30))
+        self.label_Result.setAlignment(QtCore.Qt.AlignCenter)
+        self.label_Result.setStyleSheet("font-weight: bold;")
+        
+        self.btn_add = QtWidgets.QPushButton("Add", self)
+        self.btn_add.setGeometry(QtCore.QRect(420, 50, 150, 35))
+        self.btn_add.clicked.connect(self.add_course)
+        
+        self.btn_update = QtWidgets.QPushButton("Update", self)
+        self.btn_update.setGeometry(QtCore.QRect(420, 110, 150, 35))
+        self.btn_update.clicked.connect(self.update_course)
+
+        self.btn_delete = QtWidgets.QPushButton("Delete", self)
+        self.btn_delete.setGeometry(QtCore.QRect(420, 170, 150, 35))
+        self.btn_delete.clicked.connect(self.delete_course)
+        self.btn_delete.setStyleSheet("color: red;")
+        
+        self.btn_back = QtWidgets.QPushButton("Back", self)
+        self.btn_back.setGeometry(QtCore.QRect(420, 230, 150, 35))
+        self.btn_back.clicked.connect(self.back.emit)
+
+    def execute_modify(self, sql, params, success_msg):
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, params)
+                    conn.commit()
+                    self.label_Result.setStyleSheet("color: green;")
+                    self.label_Result.setText(success_msg)
+        except Exception as e:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText(f"Database Error: {e}")
+
+    def add_course(self):
+        vals = [self.inputs[k].text().strip() for k in self.inputs]
+        if not all(vals[:5]): # 前5个字段必填
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText("Error: CourseID, Name, TeacherID, Credit, Grade are required!")
+            return
+        sql = "INSERT INTO Courses VALUES (%s, %s, %s, %s, %s, %s)"
+        params = [vals[0], vals[1], vals[2], vals[3], vals[4], vals[5] or None]
+        self.execute_modify(sql, params, "Course added successfully!")
+
+    def update_course(self):
+        vals = [self.inputs[k].text().strip() for k in self.inputs]
+        if not vals[0]:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText("Error: CourseID is required to locate the course.")
+            return
+        sql = '''UPDATE Courses SET CourseName=IFNULL(%s, CourseName), TeacherID=IFNULL(%s, TeacherID), 
+                 Credit=IFNULL(%s, Credit), Grade=IFNULL(%s, Grade), CanceledYear=%s 
+                 WHERE CourseID=%s'''
+        # 注意 CanceledYear 如果为空，应该用 None 覆盖，表示没取消
+        params = [vals[1] or None, vals[2] or None, vals[3] or None, vals[4] or None, vals[5] or None, vals[0]]
+        self.execute_modify(sql, params, "Course updated successfully!")
+
+    def delete_course(self):
+        c_id = self.inputs["CourseID"].text().strip()
+        if not c_id:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText("Error: Please specify the CourseID to delete.")
+            return
+        sql = "DELETE FROM Courses WHERE CourseID=%s"
+        self.execute_modify(sql, [c_id], "Course deleted successfully!")
+    back = QtCore.Signal()
+
+
+class Course_Choosing_Info_Modify_Ui(QtWidgets.QWidget):
+    back = QtCore.Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Modify Course Choosing Info")
+        self.resize(700, 360)
+        
+        labels = ["StudentID", "CourseID", "TeacherID", "ChosenYear", "Score"]
+        self.inputs = {}
+        for i, text in enumerate(labels):
+            QtWidgets.QLabel(text, self).setGeometry(QtCore.QRect(50, 30 + i*40, 100, 20))
+            le = QtWidgets.QLineEdit(self)
+            le.setGeometry(QtCore.QRect(150, 30 + i*40, 200, 20))
+            self.inputs[text] = le
+            
+        self.label_Result = QtWidgets.QLabel("", self)
+        self.label_Result.setGeometry(QtCore.QRect(0, 250, 700, 30))
+        self.label_Result.setAlignment(QtCore.Qt.AlignCenter)
+        self.label_Result.setStyleSheet("font-weight: bold;")
+        
+        self.btn_add = QtWidgets.QPushButton("Add", self)
+        self.btn_add.setGeometry(QtCore.QRect(420, 50, 150, 35))
+        self.btn_add.clicked.connect(self.add_cc)
+        
+        self.btn_update = QtWidgets.QPushButton("Update", self)
+        self.btn_update.setGeometry(QtCore.QRect(420, 110, 150, 35))
+        self.btn_update.clicked.connect(self.update_cc)
+
+        self.btn_delete = QtWidgets.QPushButton("Delete", self)
+        self.btn_delete.setGeometry(QtCore.QRect(420, 170, 150, 35))
+        self.btn_delete.clicked.connect(self.delete_cc)
+        self.btn_delete.setStyleSheet("color: red;")
+        
+        self.btn_back = QtWidgets.QPushButton("Back", self)
+        self.btn_back.setGeometry(QtCore.QRect(420, 230, 150, 35))
+        self.btn_back.clicked.connect(self.back.emit)
+
+    def execute_modify(self, sql, params, success_msg):
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, params)
+                    conn.commit()
+                    self.label_Result.setStyleSheet("color: green;")
+                    self.label_Result.setText(success_msg)
+        except Exception as e:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText(f"Database Error: {e}")
+
+    def add_cc(self):
+        vals = [self.inputs[k].text().strip() for k in self.inputs]
+        if not all(vals[:4]): # 前4个为必填（分数可以为空，表示还没考）
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText("Error: StudentID, CourseID, TeacherID, ChosenYear are required!")
+            return
+        sql = "INSERT INTO CourseChoosing VALUES (%s, %s, %s, %s, %s)"
+        params = [vals[0], vals[1], vals[2], vals[3], vals[4] or None]
+        self.execute_modify(sql, params, "Course Choosing record added!")
+
+    def update_cc(self):
+        vals = [self.inputs[k].text().strip() for k in self.inputs]
+        if not all(vals[:3]):
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText("Error: StudentID, CourseID, and TeacherID are required to locate record.")
+            return
+        sql = '''UPDATE CourseChoosing SET ChosenYear=IFNULL(%s, ChosenYear), Score=IFNULL(%s, Score) 
+                 WHERE StudentID=%s AND CourseID=%s AND TeacherID=%s'''
+        params = [vals[3] or None, vals[4] or None, vals[0], vals[1], vals[2]]
+        self.execute_modify(sql, params, "Course Choosing record updated!")
+
+    def delete_cc(self):
+        vals = [self.inputs[k].text().strip() for k in self.inputs]
+        if not all(vals[:3]):
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText("Error: StudentID, CourseID, and TeacherID are required to locate record.")
+            return
+        sql = "DELETE FROM CourseChoosing WHERE StudentID=%s AND CourseID=%s AND TeacherID=%s"
+        self.execute_modify(sql, [vals[0], vals[1], vals[2]], "Course Choosing record deleted!")
+    back = QtCore.Signal()
+
+class Set_Student_Score_Ui(QtWidgets.QWidget):
+    back = QtCore.Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Set Student Score")
+        self.resize(500, 300)
+        
+        QtWidgets.QLabel("Student ID", self).setGeometry(QtCore.QRect(50, 40, 100, 20))
+        self.line_s_id = QtWidgets.QLineEdit(self)
+        self.line_s_id.setGeometry(QtCore.QRect(150, 40, 200, 20))
+        
+        QtWidgets.QLabel("Course ID", self).setGeometry(QtCore.QRect(50, 90, 100, 20))
+        self.line_c_id = QtWidgets.QLineEdit(self)
+        self.line_c_id.setGeometry(QtCore.QRect(150, 90, 200, 20))
+        
+        QtWidgets.QLabel("Score", self).setGeometry(QtCore.QRect(50, 140, 100, 20))
+        self.line_score = QtWidgets.QLineEdit(self)
+        self.line_score.setGeometry(QtCore.QRect(150, 140, 200, 20))
+            
+        self.label_Result = QtWidgets.QLabel("", self)
+        self.label_Result.setGeometry(QtCore.QRect(0, 180, 500, 30))
+        self.label_Result.setAlignment(QtCore.Qt.AlignCenter)
+        self.label_Result.setStyleSheet("color: red; font-weight: bold;")
+        
+        self.btn_update = QtWidgets.QPushButton("Submit Score", self)
+        self.btn_update.setGeometry(QtCore.QRect(120, 230, 120, 35))
+        self.btn_update.clicked.connect(self.update_score)
+        
+        self.btn_back = QtWidgets.QPushButton("Back", self)
+        self.btn_back.setGeometry(QtCore.QRect(260, 230, 120, 35))
+        self.btn_back.clicked.connect(self.back.emit)
+
+    def update_score(self):
+        s_id = self.line_s_id.text().strip()
+        c_id = self.line_c_id.text().strip()
+        score_str = self.line_score.text().strip()
+        
+        # 1. 基础的输入为空拦截
+        if not s_id or not c_id or not score_str:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText("Please fill in all fields!")
+            return
+            
+        # 2. 分数合法性拦截
+        try:
+            score = float(score_str)
+            if score < 0 or score > 100:
+                self.label_Result.setStyleSheet("color: red;")
+                self.label_Result.setText("Score must be between 0 and 100.")
+                return
+        except ValueError:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText("Score must be a valid number.")
+            return
+            
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    # 3. 核心校验：验证该老师 (userID) 是否负责该课程，且该学生是否选了这门课
+                    check_sql = "SELECT * FROM CourseChoosing WHERE StudentID=%s AND CourseID=%s AND TeacherID=%s"
+                    cursor.execute(check_sql, (s_id, c_id, userID))
+                    
+                    if not cursor.fetchone():
+                        self.label_Result.setStyleSheet("color: red;")
+                        self.label_Result.setText("Error: This student didn't choose your course\nor IDs are invalid.")
+                        return
+                    
+                    # 4. 校验通过，执行更新
+                    update_sql = "UPDATE CourseChoosing SET Score=%s WHERE StudentID=%s AND CourseID=%s AND TeacherID=%s"
+                    cursor.execute(update_sql, (score, s_id, c_id, userID))
+                    conn.commit()
+                    
+                    self.label_Result.setStyleSheet("color: green;")
+                    self.label_Result.setText("Score updated successfully!")
+        except Exception as e:
+            self.label_Result.setStyleSheet("color: red;")
+            self.label_Result.setText(f"Database Error: {e}")
+    back = QtCore.Signal()
+
 
 class Change_Password_Ui(QtWidgets.QWidget):
     ret = QtCore.Signal()
@@ -682,8 +1141,13 @@ class Change_Password_Ui(QtWidgets.QWidget):
         self.lbl_err.setStyleSheet("color: red;")
         self.lbl_err.setAlignment(QtCore.Qt.AlignCenter)
         
-        QtWidgets.QPushButton("Modify", self).setGeometry(QtCore.QRect(120, 80, 75, 24)).clicked.connect(self.modify)
-        QtWidgets.QPushButton("Return", self).setGeometry(QtCore.QRect(210, 80, 75, 24)).clicked.connect(self.ret.emit)
+        self.btn_modify = QtWidgets.QPushButton("Modify", self)
+        self.btn_modify.setGeometry(QtCore.QRect(120, 80, 75, 24))
+        self.btn_modify.clicked.connect(self.modify)
+
+        self.btn_return = QtWidgets.QPushButton("Return", self)
+        self.btn_return.setGeometry(QtCore.QRect(210, 80, 75, 24))
+        self.btn_return.clicked.connect(self.ret.emit)
 
     def modify(self):
         old_pwd = self.line_old.text()
@@ -703,31 +1167,26 @@ class Change_Password_Ui(QtWidgets.QWidget):
         except Exception as e:
             self.lbl_err.setText("Database Error")
 
-# --- 控制器代码 ---
+
+# ================= 控制器代码 =================
 class Controller:
     def __init__(self):
-        # 核心改进：统一的当前窗口指针，避免多窗口重叠和内存泄漏
         self.current_window = None
 
     def _switch_win(self, new_win):
         """统一的窗口切换方法：安全关闭当前窗口，并显示新窗口"""
         if self.current_window:
             self.current_window.close()
-        # 额外处理可能游离的 login 窗口
-        if hasattr(self, 'login') and self.login and not self.login.isHidden():
-            self.login.close()
-            
         self.current_window = new_win
         self.current_window.show()
 
-    # ================== 1. 登录与主菜单路由 ==================
+    # --- 1. 登录与主菜单路由 ---
     def show_login(self):
         self.login = Login_Ui()
         self.login.admin_window.connect(self.show_admin)
         self.login.teacher_window.connect(self.show_teacher)
         self.login.student_window.connect(self.show_student)
-        self.login.show()
-        self.current_window = self.login
+        self._switch_win(self.login)
 
     def show_admin(self):
         self._switch_win(Admin_Ui())
@@ -749,15 +1208,14 @@ class Controller:
         self.current_window.change.connect(self.show_change_password)
         self.current_window.logout.connect(self.back_login)
 
-    # ================== 2. 公共功能模块 ==================
+    # --- 2. 公共功能模块 ---
     def show_change_password(self):
         self._switch_win(Change_Password_Ui())
         self.current_window.ret.connect(self.back_to_role_window)
 
-    # ================== 3. 查询子系统 (Query) ==================
+    # --- 3. 查询子系统 (Query) ---
     def show_query(self):
         self._switch_win(Query_Ui())
-        # 补全了所有的查询信号连接
         self.current_window.stu_info.connect(self.show_student_info_query)
         self.current_window.stu_score.connect(self.show_student_score_info_query)
         self.current_window.cou_info.connect(self.show_course_info_query)
@@ -785,10 +1243,9 @@ class Controller:
         self._switch_win(Average_Score_Info_Query_Ui())
         self.current_window.back.connect(self.show_query)
 
-    # ================== 4. 修改子系统 (Admin 专用) ==================
+    # --- 4. 修改子系统 (Admin 专用) ---
     def show_modify_info(self):
         self._switch_win(Modify_Info_Ui())
-        # 补全了所有的修改信息信号连接
         self.current_window.stu_info.connect(self.show_student_info_modify)
         self.current_window.cou_info.connect(self.show_course_info_modify)
         self.current_window.coc_info.connect(self.show_course_choosing_info_modify)
@@ -806,14 +1263,13 @@ class Controller:
         self._switch_win(Course_Choosing_Info_Modify_Ui())
         self.current_window.back.connect(self.show_modify_info)
 
-    # ================== 5. 评分系统 (Teacher 专用) ==================
+    # --- 5. 评分系统 (Teacher 专用) ---
     def show_set_student_score(self):
         self._switch_win(Set_Student_Score_Ui())
         self.current_window.back.connect(self.back_to_role_window)
 
-    # ================== 6. 全局导航控制 ==================
+    # --- 6. 全局导航控制 ---
     def back_to_role_window(self):
-        """通用返回方法：根据全局用户角色，自动返回对应的主菜单"""
         global userChar
         if userChar == "admin":
             self.show_admin()
@@ -823,97 +1279,11 @@ class Controller:
             self.show_student()
 
     def back_login(self):
-        """退出登录，返回登录界面"""
         global userID, userChar
-        userID, userChar = "", ""  # 登出时清空全局状态，增加安全性
-        self.show_login()
-    def show_login(self):
-        self.login = Login_Ui()
-        self.login.admin_window.connect(self.show_admin)
-        self.login.teacher_window.connect(self.show_teacher)
-        self.login.student_window.connect(self.show_student)
-        self.login.show()
-
-    def show_admin(self):
-        self.admin = Admin_Ui()
-        self.admin.cp.connect(self.show_change_password)
-        self.admin.query.connect(self.show_query)
-        self.admin.mi.connect(self.show_modify_info)
-        self.admin.logout.connect(self.back_login)
-        self.admin.show()
-        if hasattr(self, 'login'): self.login.close()
-
-    def show_teacher(self):
-        self.teacher = Teacher_Ui()
-        self.teacher.lo.connect(self.back_login)
-        self.teacher.query.connect(self.show_query)
-        self.teacher.cp.connect(self.show_change_password)
-        # self.teacher.sss.connect(self.show_set_student_score)
-        self.teacher.show()
-        if hasattr(self, 'login'): self.login.close()
-
-    def show_student(self):
-        self.student = Student_Ui()
-        self.student.logout.connect(self.back_login)
-        self.student.query.connect(self.show_query)
-        self.student.change.connect(self.show_change_password)
-        self.student.show()
-        if hasattr(self, 'login'): self.login.close()
-
-    def show_query(self):
-        self._hide_roles()
-        self.query = Query_Ui()
-        self.query.stu_info.connect(self.show_student_info_query)
-        self.query.stu_score.connect(self.show_student_score_info_query)
-        # ... 连接其他信号
-        self.query.bs.connect(self.back_from_query)
-        self.query.show()
-
-    def show_student_info_query(self):
-        self.query.close()
-        self.ssiq = Student_Info_Query_Ui()
-        self.ssiq.back.connect(lambda: (self.ssiq.close(), self.query.show()))
-        self.ssiq.show()
-
-    def show_student_score_info_query(self):
-        self.query.close()
-        self.sssiq = Student_Score_Query_Ui()
-        self.sssiq.back.connect(lambda: (self.sssiq.close(), self.query.show()))
-        self.sssiq.show()
-
-    def show_modify_info(self):
-        self.admin.close()
-        self.modify = Modify_Info_Ui()
-        self.modify.bs.connect(lambda: (self.modify.close(), self.admin.show()))
-        self.modify.show()
-
-    def show_change_password(self):
-        self._hide_roles()
-        self.cp = Change_Password_Ui()
-        self.cp.ret.connect(self.back_from_query)
-        self.cp.show()
-
-    def _hide_roles(self):
-        if userChar == "admin": self.admin.close()
-        elif userChar == "teacher": self.teacher.close()
-        elif userChar == "student": self.student.close()
-
-    def back_login(self):
-        self._hide_roles()
+        userID, userChar = "", "" 
         self.show_login()
 
-    def back_from_query(self):
-        if hasattr(self, 'query'): self.query.close()
-        if hasattr(self, 'cp'): self.cp.close()
-        if userChar == "admin": self.admin.show()
-        elif userChar == "teacher": self.teacher.show()
-        elif userChar == "student": self.student.show()
 
-def main():
-    app = QtWidgets.QApplication(sys.argv)
-    controller = Controller()
-    controller.show_login()
-    sys.exit(app.exec())
 if __name__ == "__main__":
     # 自动体检：尝试读取账号表，失败则说明是新库，自动初始化
     try:
@@ -925,7 +1295,6 @@ if __name__ == "__main__":
         Initialize_Database()
     
     app = QtWidgets.QApplication(sys.argv)
-    # 设置一个全局的 QSS 样式，让你的 UI 更好看
     app.setStyleSheet("QPushButton { min-height: 25px; border-radius: 4px; background-color: #f0f0f0; border: 1px solid #c0c0c0; } QPushButton:hover { background-color: #e0e0e0; }")
     
     controller = Controller()
